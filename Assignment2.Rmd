@@ -261,14 +261,16 @@ How would you operationalize that belief?
 ```{r Recalculating posteriors with a skeptic prior}
 # Calculating the posterior for each teacher with a gaussian prior with mean = 0.3 and sd = 0.2
 dens <- 1e4 # set a density value of 1000
-p_grid <- seq(from = 0, to = 1, length = dens) # defining a probability grid for grid approximation
-prior <- dnorm(p_grid, mean = 0.3, sd = 0.2) # defining a normal distribution with mean 0.3 and sd of 0.2 as the prior
+p_grid <- seq(from = 0, to = 1, length.out = dens) # defining a probability grid for grid approximation
+prior <- dnorm(p_grid, mean = 0.5, sd = 0.2) # defining a normal distribution with mean 0.3 and sd of 0.2 as the prior
+bin_size <- abs(p_grid[1]-p_grid[2])
 
 for (i in 1:length(all_d$person)){
   likelihood <- dbinom(all_d$correct[i], size = all_d$answered[i], prob = p_grid)
-  posterior <- likelihood * prior / sum(likelihood * prior)
+  posterior <- likelihood * prior / sum(likelihood * prior * bin_size)
   # creating a tibble containing the data
-  d <- tibble(prior = prior, p_grid = p_grid, likelihood = likelihood, posterior = posterior)
+  name <- paste("d", all_d$person[i], sep = "_")
+  assign(name, tibble(prior = prior, p_grid = p_grid, likelihood = likelihood, posterior = posterior))
   # drawing a sample from the posterior distribution
   samples <- sample(p_grid, size = dens, replace = TRUE, prob = posterior)
   # creating a rounded list of the sample HDPI-values
@@ -278,7 +280,8 @@ for (i in 1:length(all_d$person)){
   # plotting the posterior distribution of all teachers knowledge of cogsci
   plot <- ggplot(d)+
     geom_line(aes(p_grid, posterior), color = "red")+
-    geom_line(aes(p_grid, prior/dens), color = "blue")+
+    geom_line(aes(p_grid, prior), color = "blue")+
+    geom_line(aes(p_grid, likelihood), color = "yellow")+
     labs(x = "probability grid",
          y = "posterior density",
          title = all_d$person[i],
@@ -288,6 +291,48 @@ for (i in 1:length(all_d$person)){
 }
 ```
 A way of modeling the disbelief in our teachers knowledge of cogsci is by adjusting our prior to account for that. We could e.g. set the prior to be a gaussian distribution with a mean of 0.3 and a sd of 0.2. This is quite a skeptic model as we're essentially saying that they'll get about every third answer correct.
+
+# In class coding
+```{r Kenneth's Code}
+p_grid <- seq(0, 1, length.out = 1e4)
+prior <- dbeta(p_grid, 8, 4) # 8 - 1 = 7 (7 correct), 4 - 1 = 3 (3 wrong)
+# the dbeta distribution is a probability distribution spanning from 0 to 1
+plot(p_grid, prior)
+
+bin_size <- abs(p_grid[1]-p_grid[2])
+bin_size
+sum(prior*bin_size)
+
+# defining the likelihood
+likelihood <- dbinom(x = 3, size = 6, prob = p_grid)
+plot(p_grid, likelihood)
+
+# calculating the unstandardised posterior
+unstd_posterior <-prior * likelihood
+# standardising to have the probabilities sum to 1
+posterior <- posterior / sum(unstd_posterior * bin_size)
+
+# probability distributions must sum to 1, it's a fundamental interpretation of probability.
+
+# plotting the posterior distribution
+plot(p_grid, posterior)
+
+
+# define a function to run it for all the teachers
+calc_teacher_knowledge <- function(n_correct, n_questions, prior){
+  p_grid <- seq(0, 1, length.out = length(prior))
+  bin_size <- abs(p_grid[1]-p_grid[2])
+  likelihood <- dbinom(x = n_correct, size = n_questions, prob = p_grid)
+  unstd_posterior <-prior * likelihood
+  posterior <- posterior / sum(unstd_posterior * bin_size)
+  return(list(pos = posterior, lik = likelihood, grid = p_grid, pri = prior))
+}
+
+ans <- calc_teacher_knowledge(3, 6, prior)
+plot(ans$pos)
+
+```
+
 
 # 6. Optional question: 
 Can you estimate the difference between Riccardo's estimated knowledge and that of each of the other teachers? Would you deem it credible ($that is, would you believe that it is actually different)?
