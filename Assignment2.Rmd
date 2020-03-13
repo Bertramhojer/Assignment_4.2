@@ -441,7 +441,10 @@ Guidance Tips
 ```{r Creating data & loading packages}
 # Loading packages
 library(pacman)
-p_load(tidyverse, brms)
+p_load(tidyverse, brms, rethinking, patchwork)
+
+# calling the source function to implement calc_teacher_knowledge() and a2_plot()
+source("~/Desktop/folders/Uni/4th/4th_functions.R")
 
 # Creating data
 d19 <- tibble(
@@ -454,25 +457,6 @@ d20 <- tibble(
   Questions = c(10, 12, 172, 65),
   Teacher = c("RF", "KT", "JS", "MW"))
 
-# Defining function
-calc_teacher_knowledge <- function(n_correct, n_questions, prior){
-  p_grid <- seq(0, 1, length.out = length(prior))
-  bin_size <- abs(p_grid[1]-p_grid[2])
-  likelihood <- dbinom(x = n_correct, size = n_questions, prob = p_grid)
-  unstd_posterior <- prior * likelihood
-  posterior <- unstd_posterior / sum(unstd_posterior * bin_size)
-  return(list(pos = posterior, lik = likelihood, grid = p_grid, pri = prior))
-}
-
-a2_plot <- function(data, name){
-  ggplot()+
-    geom_line(aes(data$grid, data$pos), color = "red")+
-    geom_line(aes(data$grid, data$pri), color = "blue")+
-    geom_line(aes(data$grid, data$lik), color = "yellow")+
-    labs(x = "probability grid",
-         y = "Density distributions",
-         title = paste(name, "distributions", sep = " "))
-}
 
 # Specifying a positive prior
 p_grid <- seq(0, 1, length.out = 1e4)
@@ -484,26 +468,135 @@ prior <- dnorm(p_grid, mean = 0.7, sd = 0.2)
 # Goes through each teacher and calculates their posterior, likelihood, p_grid and prior and saves them into individual lists.
 
 for (i in 1:4){
-  ans <- paste("d", d19$Teacher[i], sep = "_")
-  assign(ans, calc_teacher_knowledge(d19$Correct[i], d19$Questions[i], prior))
+  ans <- paste(d19$Teacher[i], "19", sep = "")
+  assign(ans, calc_teacher(d19$Correct[i], d19$Questions[i], prior))
 }
 
-# Plotting posteriors for initial data
-a2_plot(d_RF, "Riccardo")
-a2_plot(d_MW, "Mikkel")
-a2_plot(d_KT, "Kristian")
-a2_plot(d_JS, "Josh")
+
+# Plotting posteriors for each teacher
+# Riccardo
+RF.1 <- a2_plot(p_grid = RF19$grid,
+        prior = prior,
+        posterior = RF19$teacher_posterior,
+        likelihood = RF19$likelihood, title = "Riccardo")
+# Mikkel
+MW.1 <- a2_plot(p_grid = MW19$grid,
+        prior = prior,
+        posterior = MW19$teacher_posterior,
+        likelihood = MW19$likelihood, title = "Mikkel")
+# Kristian
+KT.1 <- a2_plot(p_grid = KT19$grid,
+        prior = prior,
+        posterior = KT19$teacher_posterior,
+        likelihood = KT19$likelihood, title = "Kristian")
+# Josh
+JS.1 <- a2_plot(p_grid = JS19$grid,
+        prior = prior,
+        posterior = JS19$teacher_posterior,
+        likelihood = JS19$likelihood, title = "Josh")
+
 ```
+
+The posteriors from the initial data can then be used in the calculation of the posteriors for the new data.
 
 # Producing posteriors for subsequent data
 ```{r Calculating posteriors for 2020 data}
+# Calculating new posteriors for each teacher
+
+RF20 <- calc_teacher(d20$Correct[d20$Teacher=="RF"],
+                     d20$Questions[d20$Teacher=="RF"], prior = RF19$teacher_posterior)
+MW20 <- calc_teacher(d20$Correct[d20$Teacher=="MW"],
+                     d20$Questions[d20$Teacher=="MW"], prior = MW19$teacher_posterior)
+KT20 <- calc_teacher(d20$Correct[d20$Teacher=="KT"],
+                     d20$Questions[d20$Teacher=="KT"], prior = KT19$teacher_posterior)
+JS20 <- calc_teacher(d20$Correct[d20$Teacher=="JS"],
+                     d20$Questions[d20$Teacher=="JS"], prior = JS19$teacher_posterior)
 
 
+# Plotting new posteriors for each teacher
+# Riccardo
+RF.2 <- a2_plot(p_grid = RF20$grid,
+        prior = RF20$prior,
+        posterior = RF20$teacher_posterior,
+        likelihood = RF20$likelihood, title = "Riccardo")
+# Mikkel
+MW.2 <- a2_plot(p_grid = MW20$grid,
+        prior = MW20$prior,
+        posterior = MW20$teacher_posterior,
+        likelihood = MW20$likelihood, title = "Mikkel")
+# Kristian
+KT.2 <- a2_plot(p_grid = KT20$grid,
+        prior = KT20$prior,
+        posterior = KT20$teacher_posterior,
+        likelihood = KT20$likelihood, title = "Kristian")
+# Josh
+JS.2 <- a2_plot(p_grid = JS20$grid,
+        prior = JS20$prior,
+        posterior = JS20$teacher_posterior,
+        likelihood = JS20$likelihood, title = "Josh")
 
+# These plots essentially plot the posteriors from 2019 data next to the posteriors from 2020 since we're using the 2019 posteriors as priors for the 2020 estimations.
+
+# Plot the distributions for both initial and later data for each teacher
+RF.1 + RF.2
+MW.1 + MW.2
+KT.1 + KT.2
+JS.1 + JS.2
+```
+
+
+We can test whether a person is better than their previous selves by sampling from their two posterior distributions, and checking what percentage of samples are larger than the other. In that case, we can answer how likely it is that they are now better than they used to be.
+
+We need to use samples to compare distributions.
+
+Posterior predictive plots (trying to answer what my model would predict);
+1. Allows us to simulate how many answers someone would get correct given a model.
+rbinom(1, size = 178, prob = sample_person_posterior)
+
+One way to asses whether someone has gotten better, is by sampling from both distributions of data and investigating how large a proportion of the new distributions lies above the old distribution. This produces a measure of how likely it is that the person has gotten wiser.
+
+One could also investigated the HPDI of both distributions, but it doesn't really produce a specific measure of whether a person has gotten better or worse, since we're still just talking distributions and it is very unlikely that the distributions don't overlap at all. The change would have to be extreme for there to be no overlap of distributions.
+
+# Assessing parameter estimates
+```{r Investigating parameter estimates}
+# Drawing samples
+RF19_sam <- sample(size = 1e4, x = p_grid, prob = RF19$teacher_posterior, replace = T)
+RF20_sam <- sample(size = 1e4, x = p_grid, prob = RF20$teacher_posterior, replace = T)
+# Producing a measure of probable it is that Riccardo got better over the past year
+(RF_improvement <- sum(RF19_sam < RF20_sam)/1e4*100)
+
+# Reproduce for all teachers
+# Mikkel
+MW19_sam <- sample(size = 1e4, x = p_grid, prob = MW19$teacher_posterior, replace = T)
+MW20_sam <- sample(size = 1e4, x = p_grid, prob = MW20$teacher_posterior, replace = T)
+(MW_improvement <- sum(MW19_sam < MW20_sam)/1e4*100)
+
+# Kristian
+KT19_sam <- sample(size = 1e4, x = p_grid, prob = KT19$teacher_posterior, replace = T)
+KT20_sam <- sample(size = 1e4, x = p_grid, prob = KT20$teacher_posterior, replace = T)
+(KT_improvement <-  sum(KT19_sam < KT20_sam)/1e4*100)
+
+# Josh
+JS19_sam <- sample(size = 1e4, x = p_grid, prob = JS19$teacher_posterior, replace = T)
+JS20_sam <- sample(size = 1e4, x = p_grid, prob = JS20$teacher_posterior, replace = T)
+(JS_improvement <-  sum(JS19_sam < JS20_sam)/1e4*100)
+
+# Producing variable including everybody's probability of having improved
+paste(combined_improvement, "Riccardo:",RF_improvement, "%  ",
+      "Mikkel:", MW_improvement, "%  ",
+      "Kristian:", KT_improvement, "%  ",
+      "Josh:", JS_improvement, "%  ")
 ```
 
 
 
+Example of using LaTeX
+$$
+\sigma^2 = variance
+$$
+$$
+\sigma = standard \quad deviation
+$$
 
 
 
